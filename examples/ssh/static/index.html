@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>SSH – go-rdp</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+    }
+
+    body {
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+    }
+
+    /* ── Login page ── */
+    #login {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 10px;
+      padding: 32px 36px;
+      width: 100%;
+      max-width: 460px;
+    }
+    .card h1 {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      color: #f0f6fc;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card h1 span { font-size: 22px; }
+
+    .field { margin-bottom: 14px; }
+    .row { display: flex; gap: 12px; }
+    .row .field { flex: 1; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #8b949e;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    input[type=text], input[type=password], input[type=number], select, textarea {
+      width: 100%;
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #e6edf3;
+      padding: 7px 10px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input:focus, select:focus, textarea:focus { border-color: #58a6ff; }
+    select option { background: #161b22; }
+    textarea {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 12px;
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #8b949e;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 6px;
+      margin: 20px 0 14px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 9px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: opacity .15s;
+    }
+    .btn:hover { opacity: .88; }
+    .btn-primary { background: #388bfd; color: #fff; }
+
+    #error-msg {
+      display: none;
+      margin-top: 14px;
+      padding: 9px 12px;
+      background: #3d1a1a;
+      border: 1px solid #6e2c2c;
+      border-radius: 6px;
+      color: #f85149;
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    /* ── Session page ── */
+    #session {
+      display: none;
+      flex-direction: column;
+      height: 100vh;
+      height: 100dvh;
+      width: 100%;
+    }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 6px 16px;
+      height: 38px;
+      flex-shrink: 0;
+    }
+    #conn-label { font-size: 12px; color: #8b949e; }
+    #conn-label strong { color: #e6edf3; }
+    .btn-sm {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 4px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .btn-sm:hover { background: #30363d; }
+
+    #viewport {
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      justify-content: flex-start;
+      align-items: stretch;
+      background: #000;
+    }
+
+    .guac-sink {
+      position: absolute;
+      left: -9999px;
+      top: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Login page ── -->
+<div id="login">
+  <div class="card">
+    <h1><span>⌨</span> SSH 连接</h1>
+
+    <form id="form" autocomplete="on">
+      <div class="section-title">连接信息</div>
+
+      <div class="row">
+        <div class="field">
+          <label>Host *</label>
+          <input id="host" type="text" placeholder="192.168.1.30" required autofocus>
+        </div>
+        <div class="field" style="max-width:90px">
+          <label>Port</label>
+          <input id="port" type="number" placeholder="22" min="1" max="65535">
+        </div>
+      </div>
+
+      <div class="field">
+        <label>Username *</label>
+        <input id="user" type="text" placeholder="ubuntu" required autocomplete="username">
+      </div>
+
+      <div class="section-title">认证方式（密码或密钥二选一）</div>
+
+      <div class="field">
+        <label>Password</label>
+        <input id="password" type="password" autocomplete="current-password">
+      </div>
+
+      <div class="field">
+        <label>Private Key（PEM 格式）</label>
+        <textarea id="private-key" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;..."></textarea>
+      </div>
+      <div class="field">
+        <label>Key Passphrase</label>
+        <input id="passphrase" type="password" placeholder="密钥密码（无则留空）">
+      </div>
+
+      <div class="section-title">终端设置</div>
+
+      <div class="row">
+        <div class="field">
+          <label>Color Scheme</label>
+          <select id="color-scheme">
+            <option value="gray-black">gray-black（默认）</option>
+            <option value="white-black">white-black</option>
+            <option value="green-black">green-black</option>
+            <option value="black-white">black-white</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:90px">
+          <label>Columns</label>
+          <input id="columns" type="number" placeholder="220" min="20" max="500">
+        </div>
+        <div class="field" style="max-width:80px">
+          <label>Rows</label>
+          <input id="rows" type="number" placeholder="50" min="5" max="200">
+        </div>
+      </div>
+
+      <button class="btn btn-primary" type="submit">连接</button>
+      <div id="error-msg"></div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Session page ── -->
+<div id="session">
+  <div id="toolbar">
+    <span id="conn-label">已连接到 <strong id="conn-host"></strong></span>
+    <button class="btn-sm" id="disconnect-btn">断开连接</button>
+  </div>
+  <div id="viewport"></div>
+</div>
+
+<script>if(typeof module==="undefined")window.module={exports:{}};</script>
+<script src="https://cdn.jsdelivr.net/npm/guacamole-common-js@1.5.0/dist/cjs/guacamole-common.min.js"></script>
+<script>
+(function () {
+  var loginEl       = document.getElementById('login');
+  var sessionEl     = document.getElementById('session');
+  var viewport      = document.getElementById('viewport');
+  var errorMsg      = document.getElementById('error-msg');
+  var connHost      = document.getElementById('conn-host');
+  var disconnectBtn = document.getElementById('disconnect-btn');
+
+  var keyboardTarget = document.createElement('textarea');
+  keyboardTarget.className = 'guac-sink';
+  document.body.appendChild(keyboardTarget);
+
+  var keyboard = new Guacamole.Keyboard(keyboardTarget);
+  var currentClient = null;
+  var resizeTimer = null;
+  var sessionConnected = false;
+
+  // ── Form submit ──────────────────────────────────────────────
+  document.getElementById('form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    clearError();
+
+    var host = document.getElementById('host').value.trim();
+
+    var p = new URLSearchParams();
+    p.set('host',         host);
+    p.set('port',         document.getElementById('port').value         || '22');
+    p.set('user',         document.getElementById('user').value);
+    p.set('password',     document.getElementById('password').value);
+    p.set('private-key',  document.getElementById('private-key').value.trim());
+    p.set('passphrase',   document.getElementById('passphrase').value);
+    p.set('color-scheme', document.getElementById('color-scheme').value || 'gray-black');
+    p.set('columns',      document.getElementById('columns').value      || '220');
+    p.set('rows',         document.getElementById('rows').value         || '50');
+    p.set('dpi',          String(window.devicePixelRatio ? Math.round(window.devicePixelRatio * 96) : 96));
+    p.set('timezone',     Intl.DateTimeFormat().resolvedOptions().timeZone || '');
+
+    connHost.textContent = host;
+    startSession(p);
+  });
+
+  disconnectBtn.addEventListener('click', function () {
+    if (currentClient) currentClient.disconnect();
+    showLogin();
+  });
+
+  // ── Session management ────────────────────────────────────────
+  function startSession(params) {
+    if (currentClient) { currentClient.disconnect(); currentClient = null; }
+
+    var proto  = location.protocol === 'https:' ? 'wss' : 'ws';
+    var tunnel = new Guacamole.WebSocketTunnel(proto + '://' + location.host + '/ws');
+    currentClient = new Guacamole.Client(tunnel);
+
+    viewport.innerHTML = '';
+    var display   = currentClient.getDisplay();
+    var displayEl = display.getElement();
+    viewport.appendChild(displayEl);
+
+    display.onresize = function(w, h) { fitDisplay(w, h); };
+
+    var sessionErrorSet = false;
+    tunnel.onerror = function (status) {
+      if (sessionErrorSet) return;
+      var msg = (status && status.message) ? status.message : '连接被服务器关闭';
+      showLogin('连接失败: ' + msg);
+    };
+    currentClient.onerror = function (status) {
+      sessionErrorSet = true;
+      var msg = (status && status.message) ? status.message : '未知错误';
+      showLogin('会话错误: ' + msg);
+    };
+    currentClient.onstatechange = function (state) {
+      if (state === 3) { sessionConnected = true; sendViewportSize(); }
+      if (state === 5) { sessionConnected = false; showLogin(); } // 5 = DISCONNECTED in 1.4.0
+    };
+
+    // Terminal mostly needs keyboard; mouse for text selection
+    var mouse = new Guacamole.Mouse(displayEl);
+    mouse.onmousedown = mouse.onmousemove = mouse.onmouseup = function (state) {
+      if (currentClient) currentClient.sendMouseState(state);
+    };
+
+    keyboard.onkeydown = function (keysym) { if (currentClient) currentClient.sendKeyEvent(1, keysym); };
+    keyboard.onkeyup   = function (keysym) { if (currentClient) currentClient.sendKeyEvent(0, keysym); };
+
+    displayEl.addEventListener('click', function () { keyboardTarget.focus(); });
+
+    showSession();
+    applyViewportSizeParams(params);
+    currentClient.connect(params.toString());
+    keyboardTarget.focus();
+  }
+
+  function viewportSize() {
+    return {
+      width: Math.max(1, viewport.clientWidth || window.innerWidth),
+      height: Math.max(1, viewport.clientHeight || (window.innerHeight - 38))
+    };
+  }
+
+  function applyViewportSizeParams(params) {
+    var size = viewportSize();
+    params.set('width',  String(size.width));
+    params.set('height', String(size.height));
+  }
+
+  function fitDisplay(w, h) {
+    if (!currentClient) return;
+    var el = currentClient.getDisplay().getElement();
+    var vs = viewportSize();
+    var scale = Math.min(vs.width / w, vs.height / h, 1);
+    el.style.width  = w + 'px';
+    el.style.height = h + 'px';
+    el.style.transform = 'scale(' + scale + ')';
+    el.style.transformOrigin = '0 0';
+    el.style.flex = '0 0 auto';
+  }
+
+  function sendViewportSize() {
+    if (!currentClient || !sessionConnected || typeof currentClient.sendSize !== 'function') return;
+    var size = viewportSize();
+    currentClient.sendSize(size.width, size.height);
+  }
+
+  function scheduleViewportResize() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(sendViewportSize, 120);
+  }
+
+  function showSession() {
+    loginEl.style.display   = 'none';
+    sessionEl.style.display = 'flex';
+  }
+  function showLogin(errText) {
+    sessionEl.style.display = 'none';
+    loginEl.style.display   = 'flex';
+    sessionConnected = false;
+    if (errText) { errorMsg.textContent = errText; errorMsg.style.display = 'block'; }
+  }
+  function clearError() { errorMsg.style.display = 'none'; errorMsg.textContent = ''; }
+
+  window.addEventListener('unload', function () { if (currentClient) currentClient.disconnect(); });
+  window.addEventListener('resize', scheduleViewportResize);
+}());
+</script>
+</body>
+</html>
